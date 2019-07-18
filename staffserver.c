@@ -22,10 +22,11 @@
 #define E 0x5 //退出
 #define D 0x6  //
 #define X 0x7
+#define USER_Q 0X8
 #define NAMELEN 16
 #define DATALEN 128
 
-//sqlite3 *db;
+
 int flags = 0;
 
 typedef struct staff_info{
@@ -63,7 +64,8 @@ int process_admin_query_request(int clientfd,MSG *msg,sqlite3 *db);
 int process_admin_deluser_request(int clientfd,MSG *msg,sqlite3 *db);
 int process_admin_modify_request(int clientfd,MSG *msg,sqlite3 *db);
 void process_history(int clientfd,MSG *msg,sqlite3 *db);
-void insert_history(MSG *msg,sqlite3 *db);
+
+int process_user_query_request(int clientfd,MSG *msg,sqlite3 *db);
 void get_time(const char *date);
 int history_callback(void *arg, int ncolumn, char **f_value, char **f_name);
 int process_admin_history_request(int clientfd,MSG *msg,sqlite3 *db);
@@ -109,7 +111,7 @@ int main(int argc, const char *argv[])
 	{
 		err_log("fail to socket");
 	}
-	/*优化4： 允许绑定地址快速重用 */
+	/*优化： 允许绑定地址快速重用 */
 	int b_reuse = 1;
 	setsockopt (serverfd, SOL_SOCKET, SO_REUSEADDR, &b_reuse, sizeof (int));
 
@@ -166,6 +168,9 @@ int main(int argc, const char *argv[])
 						break;
 					case H:
 						process_admin_history_request(clientfd,&msg,db);
+						break;
+					case USER_Q:
+						process_user_query_request(clientfd,&msg,db);
 						break;
 					case E:
 					    exit(0);
@@ -284,17 +289,10 @@ int process_admin_query_request(int clientfd,MSG *msg,sqlite3 *db)
 		for(i = 0; i < nrow; i ++){
 			//for(j = 0 ; j < ncolumn; j ++){
 			//printf("%-8s ",resultp[index++]);
-			//printf("%s    %s     %s     %s\n",resultp[index+ncolumn-4],resultp[index+ncolumn-3],resultp[index+ncolumn-2],resultp[index+ncolumn-1]);
+			printf("%s    %s     %s     %s\n",resultp[index+ncolumn-4],resultp[index+ncolumn-3],resultp[index+ncolumn-2],resultp[index+ncolumn-1]);
 				
-			//sprintf(msg->text,"%s,    %s,    %s,    %s;",resultp[index+ncolumn-4],resultp[index+ncolumn-3],resultp[index+ncolumn-2],resultp[index+ncolumn-1]);
+			sprintf(msg->text,"%s,   %s,   %s,   %s;",resultp[index+ncolumn-4],resultp[index+ncolumn-3],resultp[index+ncolumn-2],resultp[index+ncolumn-1]);
 			
-			printf("%s    %s     %s     %s     %s     %s     %s     %s     %s     %s     %s.\n",resultp[index+ncolumn-11],resultp[index+ncolumn-10],\
-				resultp[index+ncolumn-9],resultp[index+ncolumn-8],resultp[index+ncolumn-7],resultp[index+ncolumn-6],resultp[index+ncolumn-5],\
-				resultp[index+ncolumn-4],resultp[index+ncolumn-3],resultp[index+ncolumn-2],resultp[index+ncolumn-1]);
-				
-			sprintf(msg->text,"%s,    %s,    %s,    %s,    %s,    %s,    %s,    %s,    %s,    %s,    %s;",resultp[index+ncolumn-11],resultp[index+ncolumn-10],\
-				resultp[index+ncolumn-9],resultp[index+ncolumn-8],resultp[index+ncolumn-7],resultp[index+ncolumn-6],resultp[index+ncolumn-5],\
-				resultp[index+ncolumn-4],resultp[index+ncolumn-3],resultp[index+ncolumn-2],resultp[index+ncolumn-1]);
 			send(clientfd,msg,sizeof(MSG),0);
 			//}
 			usleep(1000);
@@ -374,7 +372,7 @@ int process_admin_modify_request(int clientfd,MSG *msg,sqlite3 *db)
 	}else{
 		printf("the database is updated successfully.\n");
 		sprintf(msg->text, "数据库修改成功!");
-		//history_init(msg,historybuf);
+		history_init(msg,historybuf,db);
 	}
 
 	//通知用户信息修改成功
@@ -382,6 +380,46 @@ int process_admin_modify_request(int clientfd,MSG *msg,sqlite3 *db)
 
 	printf("------%s.\n",historybuf);
 	return 0;
+}
+int process_user_query_request(int clientfd,MSG *msg,sqlite3 *db)
+{
+	printf("------------%s-----------%d.\n",__func__,__LINE__);
+	//检查msg->flags--->封装sql命令－查找历史记录表－回调函数－发送查询结果－发送结束标志
+
+	int i = 0,j = 0;
+	char sql[DATALEN] = {0};
+	char **resultp;
+	int nrow,ncolumn;
+	char *errmsg;
+
+	sprintf(sql,"select * from user where name='%s';",msg->name);
+	if(sqlite3_get_table(db, sql, &resultp,&nrow,&ncolumn,&errmsg) != SQLITE_OK){
+		printf("%s.\n",errmsg);
+	}else{
+		printf("searching.....\n");	
+		for(i = 0; i < ncolumn; i ++){
+			printf("%-8s ",resultp[i]);
+		}
+		puts("");
+		puts("======================================================================================");
+				
+		int index = ncolumn;
+		for(i = 0; i < nrow; i ++){
+			printf("%s    %s     %s     %s\n",resultp[index+ncolumn-4],resultp[index+ncolumn-3],resultp[index+ncolumn-2],resultp[index+ncolumn-1]);
+				
+			sprintf(msg->text,"%s,   %s,   %s,   %s;",resultp[index+ncolumn-4],resultp[index+ncolumn-3],resultp[index+ncolumn-2],resultp[index+ncolumn-1]);
+			
+			send(clientfd,msg,sizeof(MSG),0);
+			//}
+			usleep(1000);
+			puts("======================================================================================");
+			index += ncolumn;
+		}
+
+		sqlite3_free_table(resultp);
+		printf("sqlite3_get_table successfully.\n");
+	}
+
 }
 void get_system_time(char* timedata)
 {
@@ -465,5 +503,3 @@ int process_admin_history_request(int clientfd,MSG *msg,sqlite3 *db)
 
 	 flags = 0; //记得将全局变量修改为原来的状态
 }
-void process_history(int clientfd,MSG *msg,sqlite3 *db){}
-void insert_history(MSG *msg,sqlite3 *db){}

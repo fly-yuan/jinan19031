@@ -15,6 +15,7 @@
 #define E 0x5 //退出
 #define D 0x6 
 #define X 0x7
+#define USER_Q 0X8
 #define NAMELEN 16
 #define DATALEN 128
 
@@ -190,7 +191,7 @@ USER:
                  do_user_query(sockfd,&msg);
 				 break;
 			case 2:
-				 do_history(sockfd,&msg);
+				 do_admin_modification(sockfd,&msg);
 				 break;
 			case 3:
 				goto BEF;
@@ -298,7 +299,7 @@ void do_admin_query(int sockfd,MSG *msg)
 
 		}else{
 			send(sockfd, msg, sizeof(MSG), 0);
-			printf("工号\t姓名\t密码\t年龄\t电话\n");
+			printf("工号\t姓名\t密码\t年龄\n");
 			while (1)
 			{	
 				//循环接受服务器发送的用户数据
@@ -441,7 +442,13 @@ void do_admin_modification(int sockfd,MSG *msg)//管理员修改
 void do_user_query(int sockfd,MSG *msg)
 {
 	printf("------------%s-----------%d.\n",__func__,__LINE__);
-
+	msg->type = USER_Q;
+	
+	//只能查询自己的信息，所以不需要重新输入用户名，直接send请求就可以
+	send(sockfd, msg, sizeof(MSG), 0);
+	recv(sockfd, msg, sizeof(MSG), 0);
+	printf("工号\t 姓名\t密码\t年龄\t\n");
+	show_userinfo(msg);
 }
 void do_history(int sockfd,MSG *msg){}
 void do_admin_history (int sockfd,MSG *msg)
